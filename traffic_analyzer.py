@@ -1,7 +1,7 @@
 import cv2
 from ultralytics import YOLO
 
-model = YOLO(r"runs\detect\train\weights\best.pt")
+model = YOLO("best.pt")
 
 def analyze_traffic(video_path, frame_path):
     cap = cv2.VideoCapture(video_path)
