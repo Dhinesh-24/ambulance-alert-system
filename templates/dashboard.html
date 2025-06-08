@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>User Dashboard - Ambulance Tracker</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+    <style>
+        body {
+            background-color: #121212;
+            color: #f1f1f1;
+        }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 15px;
+            background-color: #1f1f1f;
+            border-bottom: 1px solid #333;
+        }
+        header a {
+            color: #ff6b6b;
+            text-decoration: none;
+        }
+        form input, form button {
+            padding: 8px 12px;
+            font-size: 1rem;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+        }
+        form button {
+            background-color: #ff6b6b;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        #map {
+            height: 500px;
+            margin-top: 20px;
+            border-radius: 12px;
+        }
+        #traffic-status {
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #1f1f1f;
+            border-radius: 12px;
+            box-shadow: 0 0 10px rgba(255, 107, 107, 0.5);
+            font-size: 1.2rem;
+            min-height: 80px;
+            color: #ff6b6b;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h2>Welcome, {{ username }}</h2>
+        <a href="{{ url_for('logout') }}">Logout</a>
+    </header>
+
+    <main class="container mt-4">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ 'success' if category == 'success' else 'danger' }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        <h3>Send Ambulance Alert</h3>
+        <form method="POST" action="{{ url_for('alert_police_route') }}">
+            <input type="text" name="route_from" placeholder="Current Location (e.g., Maduravoyal)" required />
+            <input type="text" name="route_to" placeholder="Destination (e.g., Koyambedu)" required />
+            <button type="submit">Send Police & Hospital Alert</button>
+        </form>
+
+        <h3 class="mt-4">Traffic Congestion Status</h3>
+        <div id="traffic-status">Loading traffic status...</div>
+        
+        <h3 class="mt-4">Real-time Ambulance Tracker</h3>
+        <div id="map"></div>
+
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script>
+        let map = L.map('map').setView([13.0827, 80.2707], 13);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        let userMarker, ambulanceMarker;
+
+        function updateMap() {
+            if (!navigator.geolocation) {
+                alert("Geolocation is not supported by your browser");
+                return;
+            }
+
+            navigator.geolocation.getCurrentPosition(pos => {
+                const userLat = pos.coords.latitude;
+                const userLng = pos.coords.longitude;
+
+                if (userMarker) map.removeLayer(userMarker);
+                userMarker = L.marker([userLat, userLng])
+                    .addTo(map)
+                    .bindPopup("You are here")
+                    .openPopup();
+
+                fetch('/api/ambulance-location')
+                    .then(res => res.json())
+                    .then(data => {
+                        if (!data || !data.latitude || !data.longitude) return;
+
+                        const ambLat = data.latitude;
+                        const ambLng = data.longitude;
+
+                        if (ambulanceMarker) map.removeLayer(ambulanceMarker);
+                        ambulanceMarker = L.marker([ambLat, ambLng], {
+                            icon: L.icon({
+                                iconUrl: "https://cdn-icons-png.flaticon.com/512/2967/2967367.png",
+                                iconSize: [35, 35]
+                            })
+                        }).addTo(map).bindPopup("Ambulance Location");
+
+                        const distance = Math.sqrt(Math.pow(userLat - ambLat, 2) + Math.pow(userLng - ambLng, 2));
+                        if (distance < 0.0005) {
+                            L.popup()
+                                .setLatLng([userLat, userLng])
+                                .setContent("🚑 Ambulance is here!")
+                                .openOn(map);
+                        }
+                    });
+            }, () => {
+                alert("Could not get your location.");
+            });
+        }
+
+        // Fetch and update traffic congestion info
+        function updateTrafficStatus() {
+            fetch('/traffic_status')
+                .then(res => res.json())
+                .then(data => {
+                    let statusDiv = document.getElementById('traffic-status');
+                    if (!data || Object.keys(data).length === 0) {
+                        statusDiv.textContent = "Traffic data unavailable.";
+                        return;
+                    }
+
+                    // Fix starts here
+                    let level = data.vehicles !== undefined ? 
+                        (data.vehicles < 5 ? "Low" : data.vehicles < 15 ? "Medium" : "High") 
+                        : "Unknown";
+
+                    let congestion = data.congestion || "N/A";
+                    let message = `Traffic Level: ${level} | Congestion: ${congestion}`;
+
+                    statusDiv.textContent = message;
+                })
+                .catch(err => {
+                    document.getElementById('traffic-status').textContent = "Error fetching traffic data.";
+                    console.error(err);
+                });
+        }
+
+        setInterval(updateMap, 5000);
+        updateMap();
+
+        setInterval(updateTrafficStatus, 10000);
+        updateTrafficStatus();
+
+        // Auto-dismiss alerts after 5 seconds
+        setTimeout(() => {
+            const alertEl = document.querySelector('.alert');
+            if (alertEl) {
+                alertEl.classList.remove('show');
+                alertEl.classList.add('fade');
+                setTimeout(() => alertEl.remove(), 500);
+            }
+        }, 5000);
+    </script>
+</body>
+</html>
