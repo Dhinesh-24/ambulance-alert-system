@@ -206,7 +206,7 @@ def api_nearest_hospital():
 
 
 # YOLO model load
-model = YOLO(r"runs\detect\train\weights\best.pt")  # Your trained model path os.getenv("YOLO_MODEL_PATH")
+model = YOLO("best.pt")  # Your trained model path os.getenv("YOLO_MODEL_PATH")
 
 #2
 #model = YOLO(model_path)
